@@ -1,0 +1,41 @@
+# Build artifacts
+/build/
+/bin/
+/obj/
+*.o
+*.obj
+*.exe
+*.log
+*.out
+
+# Compiled programs
+http_server
+http_client
+ws_server
+ws_client
+basic_test
+
+# CMake
+/CMakeFiles/
+/CMakeCache.txt
+cmake_install.cmake
+
+# IDE files
+.idea/
+.vscode/
+*.user
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.workspace
+*.cbp
+
+# OS generated files
+.DS_Store
+Thumbs.db
+*~
+
+# Backup files
+*.bak
+*.swp
+*.swo
