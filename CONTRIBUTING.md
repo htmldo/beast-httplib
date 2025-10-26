@@ -108,8 +108,8 @@ For any new feature:
 ### Running Tests
 
 ```bash
-make basic_test
-./basic_test
+cd tests
+make          # Builds and runs the cpp-httplib test suite
 ```
 
 ## Submitting Changes
