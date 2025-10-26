@@ -13,7 +13,15 @@ http_server
 http_client
 ws_server
 ws_client
-basic_test
+
+# Test artifacts
+tests/test
+tests/test_split
+tests/test_proxy
+tests/server_fuzzer
+tests/*.pem
+tests/*.srl
+tests/_build_*
 
 # CMake
 /CMakeFiles/
@@ -25,7 +33,9 @@ cmake_install.cmake
 .vscode/
 *.user
 *.sln
+!tests/*.sln
 *.vcxproj
+!tests/*.vcxproj
 *.vcxproj.filters
 *.workspace
 *.cbp

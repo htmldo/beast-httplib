@@ -22,7 +22,8 @@ add_executable(ws_server examples/ws_server.cpp)
 add_executable(ws_client examples/ws_client.cpp)
 
 # Tests
-add_executable(basic_test tests/basic_test.cpp)
+# The cpp-httplib test suite is available under the tests/ directory.
+# Refer to tests/CMakeLists.txt for building the upstream tests.
 
 # Installation
 install(FILES include/httplib.h DESTINATION include)
