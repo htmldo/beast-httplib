@@ -36,6 +36,9 @@
 #include <fstream>
 #include <atomic>
 #include <ctime>
+#include <utility>
+#include <chrono>
+#include <type_traits>
 
 namespace httplib {
 
@@ -45,6 +48,26 @@ namespace websocket = beast::websocket;
 namespace net = boost::asio;
 namespace ssl = boost::asio::ssl;
 using tcp = boost::asio::ip::tcp;
+
+enum class StatusCode {
+    OK_200 = 200,
+    Created_201 = 201,
+    Accepted_202 = 202,
+    NoContent_204 = 204,
+    MovedPermanently_301 = 301,
+    Found_302 = 302,
+    SeeOther_303 = 303,
+    NotModified_304 = 304,
+    BadRequest_400 = 400,
+    Unauthorized_401 = 401,
+    Forbidden_403 = 403,
+    NotFound_404 = 404,
+    MethodNotAllowed_405 = 405,
+    InternalServerError_500 = 500,
+    NotImplemented_501 = 501,
+    BadGateway_502 = 502,
+    ServiceUnavailable_503 = 503
+};
 
 using Headers = std::multimap<std::string, std::string>;
 using Params = std::multimap<std::string, std::string>;
@@ -57,6 +80,7 @@ struct MultipartFormData {
     std::string content_type;
 };
 
+using FormData = MultipartFormData;
 using MultipartFormDataItems = std::vector<MultipartFormData>;
 
 struct Request {
@@ -206,6 +230,38 @@ using Handler = std::function<void(const Request &, Response &)>;
 using Logger = std::function<void(const Request &, const Response &)>;
 
 namespace detail {
+
+template <typename Func>
+class ScopeExit {
+public:
+    explicit ScopeExit(Func func)
+        : func_(std::move(func)), active_(true) {}
+
+    ScopeExit(ScopeExit &&other) noexcept
+        : func_(std::move(other.func_)), active_(other.active_) {
+        other.active_ = false;
+    }
+
+    ~ScopeExit() {
+        if (active_) {
+            func_();
+        }
+    }
+
+    ScopeExit(const ScopeExit &) = delete;
+    ScopeExit &operator=(const ScopeExit &) = delete;
+    ScopeExit &operator=(ScopeExit &&) = delete;
+
+private:
+    Func func_;
+    bool active_;
+};
+
+template <typename Func>
+ScopeExit<typename std::decay<Func>::type> scope_exit(Func &&f) {
+    using Decayed = typename std::decay<Func>::type;
+    return ScopeExit<Decayed>(std::forward<Func>(f));
+}
 
 inline std::string to_lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
@@ -1285,6 +1341,103 @@ protected:
     CloseHandler close_handler_;
     ErrorHandler error_handler_;
 };
+
+namespace detail {
+
+inline bool is_hex_digit(unsigned char c) {
+    return (c >= '0' && c <= '9') ||
+           (c >= 'A' && c <= 'F') ||
+           (c >= 'a' && c <= 'f');
+}
+
+inline unsigned char from_hex(unsigned char c) {
+    if (c >= '0' && c <= '9') { return static_cast<unsigned char>(c - '0'); }
+    if (c >= 'A' && c <= 'F') { return static_cast<unsigned char>(c - 'A' + 10); }
+    return static_cast<unsigned char>(c - 'a' + 10);
+}
+
+inline bool is_uri_unreserved(unsigned char c) {
+    static const std::string unreserved = "-_.!~*'()";
+    return ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            unreserved.find(static_cast<char>(c)) != std::string::npos);
+}
+
+inline bool is_uri_reserved(unsigned char c) {
+    static const std::string reserved = ";/?:@&=+$,#";
+    return reserved.find(static_cast<char>(c)) != std::string::npos;
+}
+
+inline std::string encode_uri_impl(const std::string &value, bool encode_reserved) {
+    static const char hex[] = "0123456789ABCDEF";
+
+    std::string result;
+    result.reserve(value.size() * 3);
+
+    for (unsigned char c : value) {
+        if (is_uri_unreserved(c) ||
+            (!encode_reserved && is_uri_reserved(c))) {
+            result.push_back(static_cast<char>(c));
+        } else {
+            result.push_back('%');
+            result.push_back(hex[c >> 4]);
+            result.push_back(hex[c & 0x0F]);
+        }
+    }
+
+    return result;
+}
+
+inline std::string decode_uri_impl(const std::string &value,
+                                   bool convert_plus_to_space) {
+    std::string result;
+    result.reserve(value.size());
+
+    for (size_t i = 0; i < value.size();) {
+        unsigned char c = static_cast<unsigned char>(value[i]);
+        if (c == '%' && i + 2 < value.size()) {
+            unsigned char h1 = static_cast<unsigned char>(value[i + 1]);
+            unsigned char h2 = static_cast<unsigned char>(value[i + 2]);
+            if (is_hex_digit(h1) && is_hex_digit(h2)) {
+                auto decoded = static_cast<unsigned char>((from_hex(h1) << 4) | from_hex(h2));
+                result.push_back(static_cast<char>(decoded));
+                i += 3;
+                continue;
+            }
+        } else if (convert_plus_to_space && c == '+') {
+            result.push_back(' ');
+            ++i;
+            continue;
+        }
+
+        result.push_back(static_cast<char>(c));
+        ++i;
+    }
+
+    return result;
+}
+
+} // namespace detail
+
+inline std::string encode_uri_component(const std::string &s) {
+    return detail::encode_uri_impl(s, true);
+}
+
+inline std::string encode_uri(const std::string &s) {
+    return detail::encode_uri_impl(s, false);
+}
+
+inline std::string decode_uri_component(const std::string &s) {
+    return detail::decode_uri_impl(s, true);
+}
+
+inline std::string decode_uri(const std::string &s) {
+    return detail::decode_uri_impl(s, false);
+}
+
+inline std::string decode_path_component(const std::string &s) {
+    return detail::decode_uri_impl(s, false);
+}
 
 } // namespace httplib
 
